@@ -1,3 +1,4 @@
+import sys
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -11,7 +12,8 @@ warnings.filterwarnings("ignore")
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / "data"
+DATA_DIR = Path(sys.argv[1]) if len(sys.argv) > 1 else BASE_DIR / "data"
+OUTPUT_DIR = Path(sys.argv[2]) if len(sys.argv) > 2 else BASE_DIR / "results"
 
 df1 = pd.read_csv(DATA_DIR / "thyroidDF.csv")
 df2 = pd.read_csv(DATA_DIR / "hypothyroid.csv")
@@ -176,7 +178,7 @@ predictions_df = pd.DataFrame({
 })
 
 # Сохранение результатов
-RESULTS_DIR = BASE_DIR / "results"
+RESULTS_DIR = OUTPUT_DIR
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 predictions_df.to_csv(RESULTS_DIR / "predictions.csv", index=False, encoding="utf-8-sig")
