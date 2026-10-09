@@ -151,3 +151,32 @@ results.append({
     "ROC-AUC": round(roc_auc_score(y_test, y_proba, multi_class='ovr', average='macro') * 100, 2)
 })
 
+# Сохранение результатов
+METRIC_DIR = BASE_DIR / "metrics"
+METRIC_DIR.mkdir(parents=True, exist_ok=True)
+
+results_df = pd.DataFrame(results)
+results_df.to_csv(METRIC_DIR / "metrics.csv", index=False, encoding="utf-8-sig")
+
+print(f"\nМетрики сохранены: {METRIC_DIR / 'metrics.csv'}")
+
+import joblib
+
+# Сохранение моделей
+MODEL_DIR = BASE_DIR / "models"
+MODEL_DIR.mkdir(parents=True, exist_ok=True)
+
+joblib.dump(log_model, MODEL_DIR / "logistic_regression.joblib")
+joblib.dump(rf_model, MODEL_DIR / "random_forest.joblib")
+
+predictions_df = pd.DataFrame({
+    "actual": y_test.to_numpy(),
+    "logistic_regression": log_pred,
+    "random_forest": rf_pred
+})
+
+# Сохранение результатов
+RESULTS_DIR = BASE_DIR / "results"
+RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
+predictions_df.to_csv(RESULTS_DIR / "predictions.csv", index=False, encoding="utf-8-sig")

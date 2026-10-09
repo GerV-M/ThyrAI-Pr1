@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "ML project that helps classifying thyroid diseases"
 requires-python = ">=3.14"
 dependencies = [
+    "joblib>=1.6.0",
     "numpy>=2.5.3",
     "pandas>=3.0.6",
     "scikit-learn>=1.9.1",

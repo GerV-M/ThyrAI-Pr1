@@ -7,8 +7,8 @@ venv/
 
 results/*
 metrics/*
-model/*
+models/*
 
 !results/.gitkeep
 !metrics/.gitkeep
-!model/.gitkeep
+!models/.gitkeep
