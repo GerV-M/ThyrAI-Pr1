@@ -1,0 +1,14 @@
+﻿.idea/
+__pycache__/
+*.pyc
+
+.venv/
+venv/
+
+results/*
+metrics/*
+model/*
+
+!results/.gitkeep
+!metrics/.gitkeep
+!model/.gitkeep

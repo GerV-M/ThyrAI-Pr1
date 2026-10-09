@@ -1,0 +1,10 @@
+[project]
+name = "Thyroid_disease_classification"
+version = "0.1.0"
+description = "ML project that helps classifying thyroid diseases"
+requires-python = ">=3.14"
+dependencies = [
+    "numpy>=2.5.3",
+    "pandas>=3.0.6",
+    "scikit-learn>=1.9.1",
+]
