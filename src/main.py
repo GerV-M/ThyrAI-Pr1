@@ -5,11 +5,16 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import KNNImputer
 import warnings
+import dvc.api
+import mlflow
 
 warnings.filterwarnings("ignore")
 
 # Чтение файлов, обработка датасетов
 from pathlib import Path
+
+PARAMS_PATH = Path(__file__).resolve().parent.parent / "params.yaml"
+params = dvc.api.params_show(repo=str(PARAMS_PATH.parent))
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(sys.argv[1]) if len(sys.argv) > 1 else BASE_DIR / "data"
@@ -48,14 +53,17 @@ df = df.drop_duplicates(subset=['age', 'sex', 'TSH', 'T3', 'TT4', 'T4U', 'FTI'])
 X = df.drop(columns=['target'])
 y = df['target']
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.2, random_state = 42, stratify=y)
+X_train, X_test, y_train, y_test = train_test_split(X, y,
+                                                    test_size = params['preparation']['test_size'],
+                                                    random_state = params['preparation']['random_seed'],
+                                                    stratify=y)
 
 # Заполнение пустых значений
 mode = X_train[categorical_cols].mode().iloc[0]
 X_train[categorical_cols] = X_train[categorical_cols].fillna(mode)
 X_test[categorical_cols] = X_test[categorical_cols].fillna(mode)
 
-imputer = KNNImputer(n_neighbors=5, weights='distance')
+imputer = KNNImputer(n_neighbors=params['preparation']['knn_neighbors'], weights='distance')
 
 X_train[numeric_cols] = imputer.fit_transform(X_train[numeric_cols])
 X_test[numeric_cols] = imputer.transform(X_test[numeric_cols])
@@ -80,50 +88,20 @@ df['sex'] = df['sex'].map({'F':1, 'M':0})
 
 import time
 from sklearn.metrics import *
-from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 results = []
-
-# Логистическая регрессия
-print("Модель логистической регрессии")
-
-start_time = time.perf_counter()
-
-log_model = LogisticRegression(penalty='l1', C=0.1, max_iter=100, solver='saga' , random_state=42, class_weight='balanced',  n_jobs=-1)
-
-log_model.fit(X_train, y_train)
-end_time = time.perf_counter()
-log_pred = log_model.predict(X_test)
-
-print(f"Время обучения: {end_time - start_time} секунд")
-
-print("Accuracy: ", accuracy_score(y_test, log_pred))
-print("Precision", precision_score(y_test, log_pred, average='macro'))
-print("Recall", recall_score(y_test, log_pred, average='macro'))
-print("F1-score: ", f1_score(y_test, log_pred, average='macro'))
-
-y_proba = log_model.predict_proba(X_test)
-roc_auc = roc_auc_score(y_test, y_proba, multi_class='ovr', average='macro')
-print("ROC-AUC: ", roc_auc)
-
-print(confusion_matrix(y_test, log_pred))
-print(classification_report(y_test, log_pred))
-
-results.append({
-    "Model": "Логистическая регрессия",
-    "Accuracy": round(accuracy_score(y_test, log_pred) * 100, 2),
-    "Precision": round(precision_score(y_test, log_pred, average='macro') * 100, 2),
-    "Recall": round(recall_score(y_test, log_pred, average='macro') * 100, 2),
-    "F1": round(f1_score(y_test, log_pred, average='macro') * 100, 2),
-    "ROC-AUC": round(roc_auc_score(y_test, y_proba, multi_class='ovr', average='macro') * 100, 2)
-})
 
 # Случайный лес
 print("Модель случайного леса")
 
 start_time = time.perf_counter()
 
-rf_model = RandomForestClassifier(max_depth=15, max_features='sqrt', n_estimators=300, random_state=42, class_weight='balanced', n_jobs=-1)
+rf_model = RandomForestClassifier(max_depth=params['random_forest']['max_depth'],
+                                  max_features=params['random_forest']['max_features'],
+                                  n_estimators=params['random_forest']['n_estimators'],
+                                  random_state=params['preparation']['random_seed'],
+                                  class_weight=params['random_forest']['class_weight'],
+                                  n_jobs=-1)
 
 rf_model.fit(X_train, y_train)
 end_time = time.perf_counter()
@@ -168,12 +146,10 @@ import joblib
 MODEL_DIR = BASE_DIR / "models"
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
-joblib.dump(log_model, MODEL_DIR / "logistic_regression.joblib")
 joblib.dump(rf_model, MODEL_DIR / "random_forest.joblib")
 
 predictions_df = pd.DataFrame({
     "actual": y_test.to_numpy(),
-    "logistic_regression": log_pred,
     "random_forest": rf_pred
 })
 
@@ -182,3 +158,19 @@ RESULTS_DIR = OUTPUT_DIR
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 predictions_df.to_csv(RESULTS_DIR / "predictions.csv", index=False, encoding="utf-8-sig")
+
+import time
+import uuid
+
+mlflow.set_experiment("Experiments_results")
+run_name = f"RFexp{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:4]}"
+
+# Логирование
+with mlflow.start_run(run_name=run_name):
+    for block, p_dict in params.items():
+        for name, value in p_dict.items():
+            mlflow.log_param(f"{block}_{name}", value)
+
+    mlflow.log_metric("rf_accuracy", accuracy_score(y_test, rf_pred))
+    mlflow.log_metric("rf_f1_macro", f1_score(y_test, rf_pred, average='macro'))
+    mlflow.log_metric("rf_roc_auc", roc_auc_score(y_test, rf_model.predict_proba(X_test), multi_class='ovr', average='macro'))
