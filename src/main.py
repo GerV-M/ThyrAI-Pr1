@@ -1,12 +1,21 @@
+import logging
 import sys
-import pandas as pd
+import warnings
+
+import dvc.api
 import numpy as np
+import pandas as pd
+from sklearn.impute import KNNImputer
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from sklearn.impute import KNNImputer
-import warnings
-import dvc.api
-import mlflow
+
+# Логирование
+log = logging.getLogger("ThyrAI")
+log.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s [%(levelname)s]: %(message)s', datefmt='%H:%M:%S')
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setFormatter(formatter)
+log.addHandler(console_handler)
 
 warnings.filterwarnings("ignore")
 
@@ -20,8 +29,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = Path(sys.argv[1]) if len(sys.argv) > 1 else BASE_DIR / "data"
 OUTPUT_DIR = Path(sys.argv[2]) if len(sys.argv) > 2 else BASE_DIR / "results"
 
-df1 = pd.read_csv(DATA_DIR / "thyroidDF.csv")
-df2 = pd.read_csv(DATA_DIR / "hypothyroid.csv")
+# Уровень ERROR
+try:
+    df1 = pd.read_csv(DATA_DIR / "thyroidDF.csv")
+    df2 = pd.read_csv(DATA_DIR / "hypothyroid.csv")
+    log.info("Датасеты успешно загружены.")
+except FileNotFoundError as e:
+    log.error(f"Датасеты не обнаружены. {e}")
+    sys.exit(1)
 
 df2.replace('?', np.nan, inplace=True)
 
@@ -87,12 +102,18 @@ df['sex'] = df['sex'].map({'F':1, 'M':0})
 
 
 import time
-from sklearn.metrics import *
+
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import *
+
 results = []
 
 # Случайный лес
-print("Модель случайного леса")
+log.info("Запуск обучения модели Случайного леса...")
+
+# Уровень WARNING
+if params['random_forest']['class_weight'] is None:
+    log.warning("Параметр class_weight равен None. На исходных датасетах высока вероятность переобучения модели.")
 
 start_time = time.perf_counter()
 
@@ -104,20 +125,22 @@ rf_model = RandomForestClassifier(max_depth=params['random_forest']['max_depth']
                                   n_jobs=-1)
 
 rf_model.fit(X_train, y_train)
-end_time = time.perf_counter()
 rf_pred = rf_model.predict(X_test)
 
-print(f"Время обучения: {end_time - start_time} секунд")
+end_time = time.perf_counter()
 
-print("Accuracy: ", accuracy_score(y_test, rf_pred))
-print("Precision: ", precision_score(y_test, rf_pred, average='macro'))
-print("Recall: ", recall_score(y_test, rf_pred, average='macro'))
-print("F1-score: ", f1_score(y_test, rf_pred, average='macro'))
+# Уровень INFO
+log.info(f"Время обучения: {end_time - start_time:.4f} секунд.")
+
+log.info(f"Accuracy: {accuracy_score(y_test, rf_pred)}")
+log.info(f"Precision: {precision_score(y_test, rf_pred, average='macro')}")
+log.info(f"Recall: {recall_score(y_test, rf_pred, average='macro')}")
+log.info(f"F1-score: {f1_score(y_test, rf_pred, average='macro')}")
 
 y_proba = rf_model.predict_proba(X_test)
 roc_auc = roc_auc_score(y_test, y_proba, multi_class='ovr', average='macro')
 
-print("ROC-AUC: ", roc_auc)
+log.info(f"ROC-AUC: {roc_auc}")
 
 print(confusion_matrix(y_test, rf_pred))
 print(classification_report(y_test, rf_pred))
@@ -138,7 +161,7 @@ METRIC_DIR.mkdir(parents=True, exist_ok=True)
 results_df = pd.DataFrame(results)
 results_df.to_csv(METRIC_DIR / "metrics.csv", index=False, encoding="utf-8-sig")
 
-print(f"\nМетрики сохранены: {METRIC_DIR / 'metrics.csv'}")
+log.info(f"Метрики сохранены: {METRIC_DIR / 'metrics.csv'}")
 
 import joblib
 
@@ -159,13 +182,13 @@ RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 predictions_df.to_csv(RESULTS_DIR / "predictions.csv", index=False, encoding="utf-8-sig")
 
-import time
+# Сохранение экспериментов
+import mlflow
 import uuid
 
 mlflow.set_experiment("Experiments_results")
 run_name = f"RFexp{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:4]}"
 
-# Логирование
 with mlflow.start_run(run_name=run_name):
     for block, p_dict in params.items():
         for name, value in p_dict.items():
